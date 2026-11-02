@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Ein <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness</a>-Plugin: Verteilen Sie Arbeit von Claude Code / Codex aus an DSH-Agenten, ohne auf die native Subagent-UI des Hosts zu verzichten.</strong><br />
-  <sub>Native Fortschritts-UI &bull; Tier-Richtlinie &amp; Eskalation &bull; DSH-Sitzungen im Host &bull; Vision &amp; Bildgenerierung &bull; Ein-Klick-Installation</sub>
+  <sub>Native Fortschritts-UI &bull; Tier-Richtlinie &amp; Eskalation &bull; DSH-Sitzungen im Host &bull; Ein-Klick-Installation</sub>
 </p>
 
 <p align="center">
@@ -26,7 +26,7 @@
 <p align="center">
   <img src="./docs/images/dsh-crew-overview.png" alt="DSH Crew — Einstellungsseite" width="100%" />
 </p>
-<p align="center"><sub>Die Einstellungsseite von DSH Crew — Host-Integrationen, Dispatch-Richtlinie, Ausführung und die multimodale Brücke</sub></p>
+<p align="center"><sub>Die Einstellungsseite von DSH Crew — Host-Integrationen, Dispatch-Richtlinie, Ausführung</sub></p>
 
 ## Warum DSH Crew
 
@@ -57,22 +57,6 @@ Worker erscheinen als normale Subagenten in Claude Code / Codex — Dispatch-Anz
 ### 🏛️ DSH-Sitzungen im Host
 
 Ist das Bundle in einem DSH-Profil installiert, ist jeder Worker eine First-Class-DSH-Sitzung: sichtbar in der Web-UI, nach Arbeitsverzeichnis gruppiert, mit dem pro Tier gewählten Agent-Preset gemountet. Läuft DSH nicht, fällt der Dispatch auf eine Standalone-DSH-Runtime zurück, sodass CI- und Headless-Umgebungen weiterhin funktionieren.
-
-</td>
-<td width="50%">
-
-### 👁️ Vision und Bildgenerierung
-
-Die Modelle von DSH sind reine Textmodelle. `describe_image` und `generate_image` leihen sich Augen und Pinsel der CLIs, die Sie bereits haben — Claude, Codex, Grok, Antigravity — oder einer beliebigen von Ihnen konfigurierten OpenAI-kompatiblen API. Eingefügte Bilder bleiben in der Konversation sichtbar und erreichen das Modell als Text.
-
-</td>
-</tr>
-<tr>
-<td width="50%">
-
-### 🔌 Benutzerdefinierte Provider
-
-Bringen Sie Ihren eigenen Endpoint (Base URL + API-Schlüssel + Modelle) oder eine lokale Befehlsvorlage mit. Jeder Provider hat einen Konnektivitätstest, der Erreichbarkeit und Auth prüft und dann einen echten Vision-Aufruf macht — so erfahren Sie es sofort statt mitten in der Aufgabe.
 
 </td>
 <td width="50%">
@@ -239,60 +223,6 @@ Für Codex werden dieselben zwei Prompts installiert:
 
 Der Fortschritt wird gleichzeitig nach `~/.config/dsh-crew/status.d/` gespiegelt (eine Shard-Datei pro Writer, lesbar für Statusline / externes Monitoring).
 
-## Multimodal: Vision und Bildgenerierung
-
-**DeepSeek ist ein reines Textmodell** und unterstützt weder Bildeingabe noch -generierung. Dieses Plugin bezieht diese Fähigkeiten extern über MCP-Tools:
-
-| Tool | Beschreibung |
-|---|---|
-| `describe_image` | Beantwortet Fragen durch das Betrachten von Bildern (Screenshots, Designs, Diagramme usw.), Ergebnisse werden nach Provider + Modell + Bild + Frage zwischengespeichert |
-| `generate_image` | Erzeugt ein Bild aus einer Textbeschreibung und speichert es unter einem angegebenen absoluten Pfad; die Ausgabe ist eine flache Bitmap (Ebenenbearbeitung erfordert OpenPencil) |
-
-**Bildeinfügen in Sitzungen**: Wechseln Sie in DSH das Modell auf `DeepSeek (vision) ◉`, um Bilder direkt einzufügen. Bilder bleiben in der Sitzung und werden normal angezeigt; das Plugin hängt transkribierten Text dahinter an und entfernt die Bilder vor dem Senden — Sie sehen das Bild, das Modell liest den Text.
-
-### Konfiguration
-
-In der **DSH-Einstellungsseite → DSH Crew → Multimodal** (oder bearbeiten Sie direkt `~/.config/dsh-crew/config.json`):
-
-**Vision-Provider** (Bildbetrachtung):
-
-- `claude-code` (Standard, verwendet Haiku, kostengünstig)
-- `codex` (verwendet GPT, konkretes Modell wählbar)
-- `grok` (verwendet Grok)
-- `agy` (Antigravity)
-- `custom` (OpenAI-kompatible API oder lokaler Befehl)
-- `off` (deaktiviert)
-
-**Bildgenerierungs-Provider** (Bildgenerierung):
-
-- `codex` (`$imagegen`, gpt-image-2)
-- `agy` (Nano Banana)
-- `grok` (Imagine)
-- `custom` (OpenAI-kompatible API oder lokaler Befehl)
-- `off` (deaktiviert)
-
-### Benutzerdefinierter Provider
-
-Zwei Integrationsmethoden:
-
-**API**: Jeder OpenAI-kompatible Endpoint
-- Base URL, API-Schlüssel und Modellliste ausfüllen
-- Vision verwendet `/chat/completions` mit inline eingebetteten Base64-Bildern
-- Bildgenerierung verwendet `/images/generations`
-- **Das „Bildgenerierungsmodell" muss angegeben werden, um Generierungsfähigkeit zu erhalten**, andernfalls erscheint der Provider nur in der Vision-Auswahl
-
-**CLI**: Lokale Befehlsvorlage, Platzhalter werden durch sichere Referenzen ersetzt
-- Vision: `{image} {question} {model}` → stdout als Antwort
-- Bildgenerierung: `{prompt} {output} {size}` → der Befehl muss die Datei nach `{output}` schreiben
-- Mindestens einen Befehl ausfüllen; je nachdem, welcher ausgefüllt ist, ergibt sich die Fähigkeit
-
-**Konnektivitätstest**: Jeder benutzerdefinierte Provider hat eine Test-Schaltfläche
-- API: Erreichbarkeit des Endpoints und Auth prüfen, echte Vision-Anfrage zur Verifizierung senden
-- CLI: Ausführbare Datei prüfen, echten Befehl zur Verifizierung ausführen
-- Bildgenerierung: Nur die Konfiguration validieren, keine tatsächliche Bildausgabe
-
-**Entliehene Abo-CLIs** (claude / codex / grok / agy) erfordern eine lokale Anmeldung; das Plugin umgeht deren Berechtigungen nicht für Sie.
-
 ## Hub-Modus
 
 Dieses Paket ist auch ein gültiges DSH-Bundle (`dsh.bundle` + `cordis.patch.yml`). Nach der Installation in ein DSH-Web-Profil mit `dsh plugin add dsh-crew`:
@@ -331,7 +261,6 @@ Dieses Paket ist auch ein gültiges DSH-Bundle (`dsh.bundle` + `cordis.patch.yml
 ### Bekannte Punkte
 
 - Die Codex-Rolle kann theoretisch `model_provider` direkt auf DeepSeek zeigen lassen (unverifiziert); diese Brücke hängt nicht davon ab
-- Die Ausgabe der Bildgenerierung ist eine flache Bitmap; Ebenenbearbeitung erfordert OpenPencil
 - **Runtime-Abhängigkeiten**: Nur `@modelcontextprotocol/sdk` und `zod`; `@deepseek-ai/*` sind peerDependencies (vom DSH-Host bereitgestellt)
 - **Codex muss konfigurieren**: `default_tools_approval_mode = "approve"`, andernfalls werden Tool-Aufrufe automatisch abgebrochen
 

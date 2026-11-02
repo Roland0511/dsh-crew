@@ -1,1 +1,1 @@
-Call the `dsh_worker_status` tool and present the result as one compact table: job id, tier/effort, status, progress, tokens, task summary. If there are no jobs, say so in one line. Reply in the language the user is writing in. Do nothing else.
+Use the shell tool once to run `node "__DSH_CREW_CLI__" status`. Parse its single-line JSON output and present `jobs` as one compact table: job id, tier/effort, status, progress, tokens, task summary. If there are no jobs, say so in one line. Do not invoke MCP tools. Reply in the user's language. Do nothing else.

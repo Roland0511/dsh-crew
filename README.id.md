@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Plugin <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness</a>: dispatch pekerjaan ke agen DSH dari Claude Code / Codex, tanpa kehilangan UI subagent bawaan host.</strong><br />
-  <sub>UI Progres Bawaan &bull; Kebijakan Tier &amp; Eskalasi &bull; Sesi DSH di Dalam Host &bull; Vision &amp; Pembuatan Gambar &bull; Instalasi Sekali Klik</sub>
+  <sub>UI Progres Bawaan &bull; Kebijakan Tier &amp; Eskalasi &bull; Sesi DSH di Dalam Host &bull; Instalasi Sekali Klik</sub>
 </p>
 
 <p align="center">
@@ -26,7 +26,7 @@
 <p align="center">
   <img src="./docs/images/dsh-crew-overview.png" alt="DSH Crew — settings page" width="100%" />
 </p>
-<p align="center"><sub>Halaman pengaturan DSH Crew — integrasi host, kebijakan dispatch, eksekusi, dan jembatan multimodal</sub></p>
+<p align="center"><sub>Halaman pengaturan DSH Crew — integrasi host, kebijakan dispatch, eksekusi</sub></p>
 
 ## Mengapa DSH Crew
 
@@ -57,22 +57,6 @@ Worker tampil sebagai subagent biasa di Claude Code / Codex — jumlah dispatch,
 ### 🏛️ Sesi DSH di Dalam Host
 
 Dengan bundle terpasang di profil DSH, setiap worker adalah sesi DSH kelas satu: terlihat di Web UI, dikelompokkan menurut direktori kerja, dipasangi preset Agent yang Anda pilih per tier. Tanpa DSH berjalan, dispatch melakukan fallback ke runtime DSH standalone, sehingga lingkungan CI dan headless tetap berfungsi.
-
-</td>
-<td width="50%">
-
-### 👁️ Vision dan Pembuatan Gambar
-
-Model DSH hanya mendukung teks. `describe_image` dan `generate_image` meminjam mata dan kuas dari CLI yang sudah Anda miliki — Claude, Codex, Grok, Antigravity — atau dari API apa pun yang kompatibel dengan OpenAI yang Anda konfigurasi. Gambar yang ditempel tetap terlihat di percakapan dan sampai ke model sebagai teks.
-
-</td>
-</tr>
-<tr>
-<td width="50%">
-
-### 🔌 Provider Kustom
-
-Bawa endpoint Anda sendiri (Base URL + API key + model) atau template perintah lokal. Setiap provider punya uji konektivitas yang memeriksa keterjangkauan dan autentikasi, lalu melakukan satu panggilan vision sungguhan sehingga Anda langsung tahu sekarang, bukan di tengah tugas.
 
 </td>
 <td width="50%">
@@ -239,60 +223,6 @@ Untuk Codex dipasang dua prompt yang sama:
 
 Progres secara bersamaan dicerminkan ke `~/.config/dsh-crew/status.d/` (satu file shard per penulis, dapat dibaca oleh statusline / pemantauan eksternal).
 
-## Multimodal: Vision dan Pembuatan Gambar
-
-**DeepSeek adalah model khusus teks** dan tidak mendukung input maupun pembuatan gambar. Plugin ini memperoleh kapabilitas tersebut secara eksternal melalui tool MCP:
-
-| Tool | Deskripsi |
-|---|---|
-| `describe_image` | Menjawab pertanyaan dengan melihat gambar (screenshot, desain, bagan, dll.), hasil di-cache berdasarkan provider + model + gambar + pertanyaan |
-| `generate_image` | Membuat gambar dari deskripsi teks, menyimpan ke path absolut yang ditentukan; output berupa bitmap datar (memerlukan OpenPencil untuk pengeditan layer) |
-
-**Menempel gambar di sesi**: Di DSH, ganti model ke `DeepSeek (vision) ◉` untuk menempel gambar secara langsung. Gambar tetap ada di sesi dan tampil normal; plugin menambahkan teks hasil transkripsi setelahnya dan menghapus gambar sebelum dikirim—Anda melihat gambarnya, model membaca teksnya.
-
-### Konfigurasi
-
-Di **halaman pengaturan DSH → DSH Crew → Multimodal** (atau langsung edit `~/.config/dsh-crew/config.json`):
-
-**Provider vision** (melihat gambar):
-
-- `claude-code` (default, memakai haiku, murah)
-- `codex` (memakai GPT, dapat menentukan model spesifik)
-- `grok` (memakai Grok)
-- `agy` (Antigravity)
-- `custom` (API kompatibel OpenAI atau perintah lokal)
-- `off` (nonaktif)
-
-**Provider pembuatan gambar** (pembuatan gambar):
-
-- `codex` (`$imagegen`, gpt-image-2)
-- `agy` (Nano Banana)
-- `grok` (Imagine)
-- `custom` (API kompatibel OpenAI atau perintah lokal)
-- `off` (nonaktif)
-
-### Provider Kustom
-
-Dua metode integrasi:
-
-**API**: Endpoint apa pun yang kompatibel dengan OpenAI
-- Isi Base URL, API Key, daftar model
-- Vision memakai `/chat/completions` dengan gambar base64 inline
-- Pembuatan gambar memakai `/images/generations`
-- **Harus menentukan "model pembuatan gambar" agar punya kapabilitas pembuatan**, jika tidak provider hanya muncul di pilihan vision
-
-**CLI**: Template perintah lokal, placeholder diganti dengan referensi yang aman
-- Vision: `{image} {question} {model}` → stdout sebagai jawaban
-- Pembuatan gambar: `{prompt} {output} {size}` → perintah harus menulis file ke `{output}`
-- Isi minimal satu perintah; mana pun yang diisi menentukan kapabilitas
-
-**Uji konektivitas**: Setiap provider kustom punya tombol uji
-- API: Periksa keterjangkauan endpoint dan autentikasi, kirim permintaan vision sungguhan untuk verifikasi
-- CLI: Periksa file eksekutabel, jalankan perintah sungguhan untuk verifikasi
-- Pembuatan gambar: Hanya validasi konfigurasi, tanpa output gambar sungguhan
-
-**CLI langganan yang dipinjam** (claude / codex / grok / agy) mengharuskan Anda login secara lokal; plugin tidak akan menerobos izin mereka untuk Anda.
-
 ## Mode Hub
 
 Paket ini juga merupakan DSH bundle yang valid (`dsh.bundle` + `cordis.patch.yml`). Setelah dipasang ke profil DSH Web dengan `dsh plugin add dsh-crew`:
@@ -331,7 +261,6 @@ Paket ini juga merupakan DSH bundle yang valid (`dsh.bundle` + `cordis.patch.yml
 ### Hal yang Diketahui
 
 - Role Codex secara teoretis dapat mencoba `model_provider` yang mengarah langsung ke DeepSeek (belum diverifikasi); jembatan ini tidak bergantung padanya
-- Output pembuatan gambar berupa bitmap datar; pengeditan layer memerlukan OpenPencil
 - **Dependensi runtime**: Hanya `@modelcontextprotocol/sdk` dan `zod`; `@deepseek-ai/*` adalah peerDependencies (disediakan oleh host DSH)
 - **Codex wajib dikonfigurasi**: `default_tools_approval_mode = "approve"`, jika tidak panggilan tool otomatis dibatalkan
 

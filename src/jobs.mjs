@@ -5,6 +5,7 @@
 import { DeepSeekHarness } from '@deepseek-ai/dsh-sdk-client';
 import { readFileSync, mkdirSync, existsSync } from 'node:fs';
 import { createShardWriter } from './status-shard.mjs';
+import { TIERS } from './tiers.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
@@ -15,10 +16,7 @@ const STATUS_FILE = join(CONFIG_DIR, 'status.json');
 const RUNTIME_BIN = join(ROOT, 'node_modules', '.bin', 'dsh-jsonrpc-agent');
 const CORDIS = join(ROOT, 'worker.cordis.yml');
 
-export const TIERS = {
-  flash: { model: 'deepseek-v4-flash', label: 'V4 Flash' },
-  pro: { model: 'deepseek-v4-pro', label: 'V4 Pro' },
-};
+export { TIERS };
 
 function loadDotEnv() {
   const out = {};
@@ -41,6 +39,7 @@ function publishStatus() {
     task: j.task.slice(0, 300), cwd: j.cwd, turn: j.turn, step: j.step, toolCalls: j.toolCalls,
     currentTool: j.currentTool, tokens: j.tokens,
     startedAt: j.startedAt, endedAt: j.endedAt,
+    ...(j.dispatchId === undefined ? {} : { dispatchId: j.dispatchId }),
   })));
 }
 
@@ -49,6 +48,7 @@ export function jobView(j, { withResult = false } = {}) {
     id: j.id, tier: j.tier, model: j.model, effort: j.effort, status: j.status, source: j.source,
     task: j.task.slice(0, 300), turn: j.turn, step: j.step, currentTool: j.currentTool,
     tokens: j.tokens, toolCalls: j.toolCalls, startedAt: j.startedAt, endedAt: j.endedAt,
+    ...(j.dispatchId === undefined ? {} : { dispatchId: j.dispatchId }),
   };
   if (withResult) { v.result = j.result; v.error = j.error; v.stopReason = j.stopReason; }
   return v;
@@ -57,7 +57,7 @@ export function jobView(j, { withResult = false } = {}) {
 export function listJobs() { return [...jobs.values()]; }
 export function getJob(id) { return jobs.get(id); }
 
-export function startJob({ task, tier = 'flash', effort = 'max', cwd, maxTokens = 49_152, timeoutMs = 1_800_000, source = 'api' }) {
+export function startJob({ task, tier = 'flash', effort = 'max', cwd, maxTokens = 49_152, timeoutMs = 1_800_000, source = 'api', dispatchId }) {
   const tierInfo = TIERS[tier];
   if (!tierInfo) throw new Error(`unknown tier "${tier}" (expected: ${Object.keys(TIERS).join(', ')})`);
   if (!['off', 'high', 'max'].includes(effort)) throw new Error(`unknown effort "${effort}" (expected: off, high, max)`);
@@ -90,7 +90,7 @@ export function startJob({ task, tier = 'flash', effort = 'max', cwd, maxTokens 
   });
 
   const job = {
-    id, tier, model: tierInfo.model, effort, task, source, cwd: workspace,
+    id, tier, model: tierInfo.model, effort, task, source, cwd: workspace, dispatchId,
     status: 'running', turn: 0, step: 0, currentTool: null, toolCalls: 0,
     tokens: { input: 0, output: 0, reasoning: 0 },
     startedAt: new Date().toISOString(), endedAt: null,

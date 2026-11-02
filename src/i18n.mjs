@@ -1,10 +1,10 @@
 // Server-side locale for strings that reach the user: connectivity-test
-// reports, model-list labels, error messages and the vision transcription.
+// reports, model-list labels and error messages.
 //
 // The panel owns the authoritative locale (DSH's setting may be absent, in
 // which case the browser decides), so it passes `lang` with every request and
 // the hub calls setLang(). The host's durable setting seeds the initial value
-// for paths with no request behind them, such as the pasted-image pre-step.
+// for paths with no request behind them.
 
 let LANG = 'en';
 

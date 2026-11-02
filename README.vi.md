@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Một plugin của <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness</a>: điều phối công việc tới các DSH agent từ Claude Code / Codex mà không phải từ bỏ UI subagent gốc của host.</strong><br />
-  <sub>UI Tiến trình Gốc &bull; Chính sách Tier &amp; Nâng cấp &bull; Phiên DSH Trong Host &bull; Vision &amp; Tạo ảnh &bull; Cài đặt Một Cú Nhấp</sub>
+  <sub>UI Tiến trình Gốc &bull; Chính sách Tier &amp; Nâng cấp &bull; Phiên DSH Trong Host &bull; Cài đặt Một Cú Nhấp</sub>
 </p>
 
 <p align="center">
@@ -26,7 +26,7 @@
 <p align="center">
   <img src="./docs/images/dsh-crew-overview.png" alt="DSH Crew — settings page" width="100%" />
 </p>
-<p align="center"><sub>Trang cài đặt DSH Crew — tích hợp host, chính sách điều phối, thực thi và cầu nối đa phương thức</sub></p>
+<p align="center"><sub>Trang cài đặt DSH Crew — tích hợp host, chính sách điều phối, thực thi</sub></p>
 
 ## Vì sao dùng DSH Crew
 
@@ -57,22 +57,6 @@ Workers xuất hiện như các subagent thông thường trong Claude Code / Co
 ### 🏛️ Phiên DSH Trong Host
 
 Với bundle được cài trong một DSH profile, mỗi worker là một phiên DSH first-class: hiển thị trong Web UI, được nhóm theo thư mục làm việc, gắn preset Agent mà bạn chọn theo từng tier. Khi DSH không chạy, việc điều phối rơi về một DSH runtime standalone, nên CI và môi trường headless vẫn hoạt động.
-
-</td>
-<td width="50%">
-
-### 👁️ Vision và Tạo ảnh
-
-Các model của DSH chỉ xử lý văn bản. `describe_image` và `generate_image` mượn mắt và cọ vẽ của những CLI bạn đã có — Claude, Codex, Grok, Antigravity — hoặc của bất kỳ API tương thích OpenAI nào bạn cấu hình. Ảnh được dán vẫn hiển thị trong hội thoại và đến được model dưới dạng văn bản.
-
-</td>
-</tr>
-<tr>
-<td width="50%">
-
-### 🔌 Provider Tùy chỉnh
-
-Mang endpoint của riêng bạn (Base URL + API key + models) hoặc một template lệnh cục bộ. Mỗi provider có một bài kiểm tra kết nối kiểm tra khả năng truy cập và xác thực, sau đó thực hiện một lời gọi vision thật để bạn phát hiện ngay bây giờ, không phải giữa chừng tác vụ.
 
 </td>
 <td width="50%">
@@ -239,60 +223,6 @@ Phía Codex cài đúng hai prompt tương ứng:
 
 Tiến trình đồng thời được phản chiếu vào `~/.config/dsh-crew/status.d/` (một tệp shard cho mỗi writer, có thể được đọc bởi statusline / giám sát bên ngoài).
 
-## Đa phương thức: vision và tạo ảnh
-
-**DeepSeek là model chỉ xử lý văn bản** và không hỗ trợ nhập ảnh hay tạo ảnh. Plugin này lấy các khả năng đó từ bên ngoài thông qua các MCP tool:
-
-| Công cụ | Mô tả |
-|---|---|
-| `describe_image` | Trả lời câu hỏi bằng cách xem ảnh (ảnh chụp màn hình, thiết kế, biểu đồ, v.v.), kết quả được cache theo provider + model + ảnh + câu hỏi |
-| `generate_image` | Tạo ảnh từ mô tả văn bản, lưu vào đường dẫn tuyệt đối được chỉ định; đầu ra là bitmap phẳng (cần OpenPencil để chỉnh sửa layer) |
-
-**Dán ảnh trong phiên**: Trong DSH, chuyển model sang `DeepSeek (vision) ◉` để dán ảnh trực tiếp. Ảnh ở lại trong phiên và hiển thị bình thường; plugin nối văn bản được nhận dạng vào sau ảnh và gỡ ảnh trước khi gửi — bạn thấy ảnh, model đọc văn bản.
-
-### Cấu hình
-
-Trong **trang cài đặt DSH → DSH Crew → Multimodal** (hoặc sửa trực tiếp `~/.config/dsh-crew/config.json`):
-
-**Vision provider** (xem ảnh):
-
-- `claude-code` (mặc định, dùng haiku, chi phí thấp)
-- `codex` (dùng GPT, có thể chỉ định model cụ thể)
-- `grok` (dùng Grok)
-- `agy` (Antigravity)
-- `custom` (API tương thích OpenAI hoặc lệnh cục bộ)
-- `off` (tắt)
-
-**Image generation provider** (tạo ảnh):
-
-- `codex` (`$imagegen`, gpt-image-2)
-- `agy` (Nano Banana)
-- `grok` (Imagine)
-- `custom` (API tương thích OpenAI hoặc lệnh cục bộ)
-- `off` (tắt)
-
-### Provider tùy chỉnh
-
-Hai cách tích hợp:
-
-**API**: Bất kỳ endpoint tương thích OpenAI nào
-- Điền Base URL, API Key, danh sách model
-- Vision dùng `/chat/completions` với ảnh base64 inline
-- Tạo ảnh dùng `/images/generations`
-- **Phải chỉ định "image generation model" để có khả năng tạo ảnh**, nếu không provider chỉ xuất hiện trong lựa chọn vision
-
-**CLI**: Template lệnh cục bộ, placeholder được thay bằng tham chiếu an toàn
-- Vision: `{image} {question} {model}` → stdout là câu trả lời
-- Tạo ảnh: `{prompt} {output} {size}` → lệnh phải ghi tệp vào `{output}`
-- Điền ít nhất một lệnh; lệnh nào được điền sẽ quyết định khả năng
-
-**Kiểm tra kết nối**: Mỗi provider tùy chỉnh có một nút kiểm tra
-- API: Kiểm tra khả năng truy cập endpoint, xác thực, gửi yêu cầu vision thật để xác minh
-- CLI: Kiểm tra tệp thực thi, chạy lệnh thật để xác minh
-- Tạo ảnh: Chỉ xác thực cấu hình, không xuất ảnh thật
-
-**CLI thuê bao được mượn** (claude / codex / grok / agy) yêu cầu bạn đăng nhập cục bộ; plugin sẽ không bỏ qua quyền của chúng thay bạn.
-
 ## Hub mode
 
 Gói này cũng là một DSH bundle hợp lệ (`dsh.bundle` + `cordis.patch.yml`). Sau khi cài vào DSH Web profile bằng `dsh plugin add dsh-crew`:
@@ -331,7 +261,6 @@ Gói này cũng là một DSH bundle hợp lệ (`dsh.bundle` + `cordis.patch.ym
 ### Các mục đã biết
 
 - Codex role về lý thuyết có thể thử `model_provider` trỏ thẳng tới DeepSeek (chưa xác minh); cầu nối này không phụ thuộc vào điều đó
-- Đầu ra tạo ảnh là bitmap phẳng; chỉnh sửa layer cần OpenPencil
 - **Runtime dependencies**: Chỉ có `@modelcontextprotocol/sdk` và `zod`; `@deepseek-ai/*` là peerDependencies (do DSH host cung cấp)
 - **Codex phải cấu hình**: `default_tools_approval_mode = "approve"`, nếu không các lời gọi tool sẽ bị tự động hủy
 

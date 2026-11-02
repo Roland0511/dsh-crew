@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { createShardWriter, readMergedStatus } from '../status-shard.mjs';
+import { tierModel, presetKey } from '../tiers.mjs';
 
 // No @deepseek-ai imports here on purpose: this plugin is loaded into the
 // profile realm, and importing our own package copies would create duplicate
@@ -45,7 +46,7 @@ function userMessage(text) {
 }
 
 export const name = 'dsh-crew';
-export const inject = ['agents', 'sessions', 'agentDefaultModel', 'tools', 'llm', 'attachments'];
+export const inject = ['agents', 'sessions', 'agentDefaultModel', 'tools'];
 
 // Optional: the host's durable locale preference seeds server-side strings
 // before the panel is ever opened. Absent preference means "browser decides".
@@ -59,12 +60,11 @@ function seedLangFromHost(ctx) {
 import { setLang } from '../i18n.mjs';
 
 const ROUTE_BASE = '/_dsh/dsh-crew';
-const TIER_MODELS = { flash: 'deepseek-v4-flash', pro: 'deepseek-v4-pro' };
 const CONFIG_DIR = join(homedir(), '.config', 'dsh-crew');
 
 // ---------- job registry ----------
 
-class WorkerRegistry {
+export class WorkerRegistry {
   constructor(ctx) {
     this.ctx = ctx;
     this.jobs = new Map();
@@ -79,6 +79,7 @@ class WorkerRegistry {
       cwd: job.cwd, turn: job.turn, step: job.step, currentTool: job.currentTool,
       toolCalls: job.toolCalls, tokens: job.tokens, mode: 'hub',
       startedAt: job.startedAt, endedAt: job.endedAt,
+      ...(job.dispatchId === undefined ? {} : { dispatchId: job.dispatchId }),
     };
     if (withResult) {
       v.result = job.result; v.error = job.error; v.stopReason = job.stopReason;
@@ -91,17 +92,16 @@ class WorkerRegistry {
     this.shard.publish([...this.jobs.values()].map((j) => this.view(j)));
   }
 
-  async spawn({ task, tier = 'flash', effort = 'max', cwd, source = 'api', provider = 'deepseek-official', preset }) {
-    const model = TIER_MODELS[tier];
+  async spawn({ task, tier = 'flash', effort = 'max', cwd, source = 'api', provider = 'deepseek-official', preset, dispatchId }) {
+    const model = tierModel(tier);
     if (!model) throw new Error(`unknown tier "${tier}"`);
     if (!['off', 'high', 'max'].includes(effort)) throw new Error(`unknown effort "${effort}"`);
     if (!cwd || !cwd.startsWith('/')) throw new Error('cwd must be an absolute path');
-    await this.ctx.get('loader')?.await();
 
     const id = `hub-${this.nextId++}-${Date.now().toString(36)}`;
     const sessionId = `session-${randomUUID()}`;
     const job = {
-      id, sessionId, tier, model, effort, task, source, cwd,
+      id, sessionId, tier, model, effort, task, source, cwd, dispatchId,
       status: 'running', turn: 0, step: 0, currentTool: null, toolCalls: 0,
       tokens: { input: 0, output: 0, reasoning: 0 },
       startedAt: new Date().toISOString(), endedAt: null,
@@ -110,13 +110,19 @@ class WorkerRegistry {
     };
     this.jobs.set(id, job);
 
+    // Publish before loader/preset/agent initialization. The external MCP
+    // dispatcher removes its provisional row as soon as this method returns,
+    // so the concrete job must already be observable at that boundary.
+    this.publish();
+
     const selection = { provider, model, reasoningEffort: effort };
     const presets = this.ctx.get('agentPresets');
     const cfg = this.getConfig?.() ?? {};
-    const wanted = preset ?? (tier === 'flash' ? cfg.preset_flash : cfg.preset_pro);
-    const presetId = presets === undefined
-      ? undefined
-      : (await presets.resolve(!wanted || wanted === 'default' ? undefined : wanted)).id;
+    const presetKeyForTier = presetKey(tier);
+    // explicit `preset` wins (the external dispatcher resolved it per call);
+    // otherwise the config key named for this tier, falling back to pro's
+    // preset for tiers that do not have one yet.
+    const wanted = preset ?? cfg[presetKeyForTier] ?? cfg.preset_pro;
 
     const onEvent = (session, event) => {
       switch (event.type) {
@@ -147,6 +153,10 @@ class WorkerRegistry {
     };
 
     const run = async () => {
+      await this.ctx.get('loader')?.await();
+      const presetId = presets === undefined
+        ? undefined
+        : (await presets.resolve(!wanted || wanted === 'default' ? undefined : wanted)).id;
       const handle = await this.ctx.agents.create({
         sessionId,
         meta: { cwd, ...(presetId === undefined ? {} : { agentPreset: presetId }) },
@@ -259,8 +269,7 @@ function sendJson(res, status, value, headers = {}) {
 /**
  * The panel is the authority on the active locale (DSH's setting may be unset,
  * leaving it to the browser), so it tags requests with ?lang= / body.lang and
- * the hub adopts it. Conversation-side paths with no request behind them —
- * pasted-image transcription — then follow the same language.
+ * the hub adopts it.
  */
 function adoptLang(value) {
   if (value === 'zh' || value === 'en') setLang(value);
@@ -286,28 +295,6 @@ export async function apply(ctx) {
   } catch {}
   const disposers = [];
 
-  // Multimodal bridge: register describe_image / generate_image for the DS
-  // model. Config is read per call so settings-page edits apply live.
-  try {
-    const { createMultimodalTools } = await import('../multimodal.mjs');
-    const { readGlobalConfig } = await import('../install/install.mjs');
-    for (const tool of createMultimodalTools(() => readGlobalConfig())) {
-      disposers.push(ctx.effect(() => ctx.tools.register(tool), `dsh-crew: ${tool.name} tool`));
-    }
-  } catch (err) {
-    ctx.logger?.warn?.(`dsh-crew: multimodal tools unavailable: ${err?.message ?? err}`);
-  }
-
-  // Vision route: image paste on the text-only DS models (admission adapter +
-  // pre-step transcription).
-  try {
-    const { installVisionRoute } = await import('../vision-route.mjs');
-    const { readGlobalConfig } = await import('../install/install.mjs');
-    disposers.push(installVisionRoute(ctx, () => readGlobalConfig()));
-  } catch (err) {
-    ctx.logger?.warn?.(`dsh-crew: vision route unavailable: ${err?.message ?? err}`);
-  }
-
   ctx.inject(['webServer'], (webCtx) => {
     const webServer = webCtx.webServer;
     const disposers = [];
@@ -327,8 +314,8 @@ export async function apply(ctx) {
           if (req.method === 'GET' && parts.length === 0) {
             // Machine-wide view: this hub's live jobs plus fresh shards from
             // other writers (standalone MCP sessions, other hub instances).
-            const own = [...hub.jobs.values()].map((j) => ({ ...hub.view(j), origin: hub.shard.writer }));
-            const foreign = readMergedStatus({ excludeWriter: hub.shard.writer });
+            const own = [...hub.jobs.values()].map((j) => ({ ...hub.view(j), origin: hub.shard.writer, local: true }));
+            const foreign = readMergedStatus({ excludeWriter: hub.shard.writer }).map((j) => ({ ...j, local: false }));
             return sendJson(res, 200, { ok: true, jobs: [...own, ...foreign] });
           }
           if (req.method === 'GET' && parts.length === 1) {
@@ -392,43 +379,6 @@ export async function apply(ctx) {
     }));
 
     disposers.push(webServer.register({
-      kind: 'exact', path: `${ROUTE_BASE}/vision-models`,
-      handler: async (req, res) => {
-        if (!isLoopbackRequest(req)) return sendJson(res, 403, { ok: false, error: 'loopback only' });
-        try {
-          const url = new URL(req.url, 'http://localhost');
-          const provider = url.searchParams.get('provider');
-          const force = url.searchParams.get('refresh') === '1';
-          const lang = url.searchParams.get('lang');
-          adoptLang(lang);
-          const { listVisionModels } = await import('../multimodal.mjs');
-          const { readGlobalConfig } = await import('../install/install.mjs');
-          return sendJson(res, 200, { ok: true, models: await listVisionModels(provider, force, () => readGlobalConfig(), lang) });
-        } catch (err) {
-          return sendJson(res, 500, { ok: false, error: err?.message ?? String(err) });
-        }
-      },
-    }));
-
-    disposers.push(webServer.register({
-      kind: 'exact', path: `${ROUTE_BASE}/provider-test`,
-      handler: async (req, res) => {
-        if (!isLoopbackRequest(req)) return sendJson(res, 403, { ok: false, error: 'loopback only' });
-        if (req.method !== 'POST') return sendJson(res, 405, { ok: false, error: 'POST only' });
-        try {
-          // The entry comes from the panel form so unsaved edits can be probed.
-          const entry = await readBody(req);
-          adoptLang(entry?.lang);
-          const { testProvider } = await import('../multimodal.mjs');
-          const result = await testProvider(entry, entry?.lang);
-          return sendJson(res, 200, { ok: true, result });
-        } catch (err) {
-          return sendJson(res, 500, { ok: false, error: err?.message ?? String(err) });
-        }
-      },
-    }));
-
-    disposers.push(webServer.register({
       kind: 'exact', path: `${ROUTE_BASE}/install/status`,
       handler: async (req, res) => {
         if (!isLoopbackRequest(req)) return sendJson(res, 403, { ok: false, error: 'loopback only' });
@@ -474,7 +424,7 @@ export async function apply(ctx) {
     return () => { for (const d of disposers.reverse()) d(); };
   });
 
-  ctx.logger?.info?.('dsh-crew hub mounted (jobs API + installer endpoints + multimodal tools)');
+  ctx.logger?.info?.('dsh-crew hub mounted (jobs API + installer endpoints)');
   return async () => {
     for (const d of disposers.reverse()) { try { d(); } catch {} }
     await hub.dispose();

@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong><a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness</a> plugin: Claude Code / Codex에서 DSH agent로 작업을 dispatch하며, 호스트의 native subagent UI는 그대로 유지합니다.</strong><br />
-  <sub>네이티브 진행 UI &bull; Tier 정책 &amp; 에스컬레이션 &bull; 호스트 내 DSH 세션 &bull; 비전 &amp; 이미지 생성 &bull; 원클릭 설치</sub>
+  <sub>네이티브 진행 UI &bull; Tier 정책 &amp; 에스컬레이션 &bull; 호스트 내 DSH 세션 &bull; 원클릭 설치</sub>
 </p>
 
 <p align="center">
@@ -26,7 +26,7 @@
 <p align="center">
   <img src="./docs/images/dsh-crew-overview.png" alt="DSH Crew — 설정 페이지" width="100%" />
 </p>
-<p align="center"><sub>DSH Crew 설정 페이지 — 호스트 통합, 디스패치 정책, 실행 및 멀티모달 브리지</sub></p>
+<p align="center"><sub>DSH Crew 설정 페이지 — 호스트 통합, 디스패치 정책, 실행</sub></p>
 
 ## DSH Crew를 사용하는 이유
 
@@ -57,22 +57,6 @@ worker는 Claude Code / Codex에서 일반 subagent로 표시됩니다. dispatch
 ### 🏛️ 호스트 내 DSH 세션
 
 bundle을 DSH profile에 설치하면 각 worker는 first-class DSH session이 됩니다. Web UI에 표시되고, 작업 디렉터리별로 그룹화되며, tier별로 선택한 Agent preset으로 마운트됩니다. DSH가 실행 중이 아니면 standalone DSH runtime으로 폴백하므로 CI 및 headless 환경에서도 작동합니다.
-
-</td>
-<td width="50%">
-
-### 👁️ 비전 및 이미지 생성
-
-DSH의 model은 text-only입니다. `describe_image`와 `generate_image`는 이미 보유한 CLI — Claude, Codex, Grok, Antigravity — 또는 설정한 OpenAI 호환 API의 눈과 붓을 빌려 사용합니다. 붙여넣은 image는 대화에 계속 표시되고 model에는 text로 전달됩니다.
-
-</td>
-</tr>
-<tr>
-<td width="50%">
-
-### 🔌 사용자 지정 provider
-
-자체 endpoint(Base URL + API key + models)나 로컬 command template을 가져올 수 있습니다. 각 provider에는 connectivity test가 있어 reachability와 auth를 확인한 후 실제 vision 호출을 한 번 수행하므로, 작업 도중이 아니라 지금 문제를 발견할 수 있습니다.
 
 </td>
 <td width="50%">
@@ -239,60 +223,6 @@ Codex 쪽에도 동일한 두 프롬프트가 설치됩니다:
 
 progress는 동시에 `~/.config/dsh-crew/status.d/`에 미러링됩니다(writer마다 shard file 하나, statusline / 외부 모니터링에서 읽을 수 있음).
 
-## 멀티모달: 비전 및 이미지 생성
-
-**DeepSeek는 text-only model**이며 image 입력이나 생성을 지원하지 않습니다. 이 plugin은 MCP tool을 통해 이러한 기능을 외부에서 제공받습니다:
-
-| 도구 | 설명 |
-|---|---|
-| `describe_image` | 이미지(스크린샷, 디자인, 차트 등)를 보고 질문에 답합니다. 결과는 provider + model + image + question별로 캐시됩니다 |
-| `generate_image` | 텍스트 설명에서 이미지를 생성하고 지정된 absolute path에 저장합니다. 출력은 flat bitmap입니다(레이어 편집에는 OpenPencil 필요) |
-
-**세션 이미지 붙여넣기**: DSH에서 model을 `DeepSeek (vision) ◉`로 전환하면 이미지를 직접 붙여넣을 수 있습니다. 이미지는 session에 남아 정상적으로 표시됩니다. plugin은 이미지 뒤에 전사된 텍스트를 추가하고 전송 전에 이미지를 제거합니다 — 사용자는 이미지를 보고, model은 텍스트를 읽습니다.
-
-### 구성
-
-**DSH 설정 페이지 → DSH Crew → Multimodal**(또는 `~/.config/dsh-crew/config.json` 직접 편집):
-
-**Vision provider**(이미지 보기):
-
-- `claude-code` (기본값, haiku 사용, 저비용)
-- `codex` (GPT 사용, 특정 model 지정 가능)
-- `grok` (Grok 사용)
-- `agy` (Antigravity)
-- `custom` (OpenAI 호환 API 또는 로컬 명령)
-- `off` (비활성화)
-
-**Image generation provider**(이미지 생성):
-
-- `codex` (`$imagegen`, gpt-image-2)
-- `agy` (Nano Banana)
-- `grok` (Imagine)
-- `custom` (OpenAI 호환 API 또는 로컬 명령)
-- `off` (비활성화)
-
-### 사용자 지정 provider
-
-두 가지 통합 방법이 있습니다:
-
-**API**: 모든 OpenAI 호환 endpoint
-- Base URL, API Key, model list 입력
-- Vision은 인라인 base64 이미지와 함께 `/chat/completions`를 사용합니다
-- Image generation은 `/images/generations`를 사용합니다
-- 생성 기능을 사용하려면 **"image generation model"을 반드시 지정해야 합니다**. 그렇지 않으면 provider는 vision 선택 항목에만 나타납니다
-
-**CLI**: 로컬 command template. placeholder는 안전한 참조로 대체됩니다
-- Vision: `{image} {question} {model}` → stdout이 답변이 됩니다
-- Image generation: `{prompt} {output} {size}` → 명령이 `{output}`에 파일을 써야 합니다
-- 최소한 하나의 command를 입력하세요. 입력된 command에 따라 capability가 결정됩니다
-
-**Connectivity test**: 각 custom provider에는 테스트 버튼이 있습니다
-- API: endpoint reachability와 auth를 확인하고 실제 vision 요청을 보내 검증합니다
-- CLI: 실행 파일을 확인하고 실제 명령을 실행해 검증합니다
-- Image generation: 구성만 검증하고 실제 이미지를 출력하지는 않습니다
-
-**빌려 쓰는 subscription CLI**(claude / codex / grok / agy)는 로컬에 로그인되어 있어야 합니다. plugin이 해당 권한을 대신 우회하지 않습니다.
-
 ## Hub 모드
 
 이 패키지는 유효한 DSH bundle(`dsh.bundle` + `cordis.patch.yml`)이기도 합니다. `dsh plugin add dsh-crew`로 DSH Web profile에 설치하면:
@@ -331,7 +261,6 @@ progress는 동시에 `~/.config/dsh-crew/status.d/`에 미러링됩니다(write
 ### 알려진 항목
 
 - Codex role은 이론적으로 DeepSeek을 직접 가리키는 `model_provider`를 시도할 수 있습니다(미검증). 이 bridge는 그것에 의존하지 않습니다
-- Image generation 출력은 flat bitmap입니다. 레이어 편집에는 OpenPencil이 필요합니다
 - **Runtime dependencies**: `@modelcontextprotocol/sdk`와 `zod`만 있습니다. `@deepseek-ai/*`는 peerDependencies입니다(DSH host가 제공)
 - **Codex 필수 구성**: `default_tools_approval_mode = "approve"`, 그렇지 않으면 tool 호출이 자동 취소됩니다
 

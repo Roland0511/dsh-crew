@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Bir <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness</a> eklentisi: Claude Code / Codex'ten DSH ajanlarına iş gönderin; host'un yerel subagent arayüzünden vazgeçmeden.</strong><br />
-  <sub>Yerel İlerleme Arayüzü &bull; Tier Politikası &amp; Yükseltme &bull; Host İçi DSH Oturumları &bull; Görüntü İnceleme ve Görsel Üretimi &bull; Tek Tıkla Kurulum</sub>
+  <sub>Yerel İlerleme Arayüzü &bull; Tier Politikası &amp; Yükseltme &bull; Host İçi DSH Oturumları &bull; Tek Tıkla Kurulum</sub>
 </p>
 
 <p align="center">
@@ -26,7 +26,7 @@
 <p align="center">
   <img src="./docs/images/dsh-crew-overview.png" alt="DSH Crew — ayarlar sayfası" width="100%" />
 </p>
-<p align="center"><sub>DSH Crew ayarlar sayfası — host entegrasyonları, gönderim politikası, yürütme ve multimodal köprü</sub></p>
+<p align="center"><sub>DSH Crew ayarlar sayfası — host entegrasyonları, gönderim politikası, yürütme</sub></p>
 
 ## Neden DSH Crew
 
@@ -57,22 +57,6 @@ Worker'lar Claude Code / Codex'te normal subagent'lar olarak görünür — gön
 ### 🏛️ Host İçi DSH Oturumları
 
 Bundle bir DSH profiline kurulduğunda, her worker birinci sınıf bir DSH oturumudur: Web UI'da görünür, çalışma dizinine göre gruplanır ve tier başına seçtiğiniz Agent preset'iyle bağlanır. DSH çalışmıyorsa, gönderim standalone bir DSH runtime'ına geri döner; böylece CI ve headless ortamlar çalışmaya devam eder.
-
-</td>
-<td width="50%">
-
-### 👁️ Görüntü İnceleme ve Görsel Üretimi
-
-DSH'nin modelleri yalnızca metindir. `describe_image` ve `generate_image`, zaten sahip olduğunuz CLI'lerin — Claude, Codex, Grok, Antigravity — veya yapılandırdığınız herhangi bir OpenAI uyumlu API'nin gözlerini ve fırçasını kullanır. Yapıştırılan görseller sohbette görünür kalır ve modele metin olarak ulaşır.
-
-</td>
-</tr>
-<tr>
-<td width="50%">
-
-### 🔌 Özel Sağlayıcılar
-
-Kendi endpoint'inizi (Base URL + API anahtarı + modeller) veya yerel bir komut şablonu getirin. Her sağlayıcıda erişilebilirliği ve kimlik doğrulamayı kontrol eden, ardından gerçek bir görüntü çağrısı yapan bir bağlantı testi vardır; böylece sorunu görev sırasında değil, hemen öğrenirsiniz.
 
 </td>
 <td width="50%">
@@ -239,60 +223,6 @@ Codex için de aynı iki prompt kurulur:
 
 İlerleme aynı anda `~/.config/dsh-crew/status.d/` dizinine yansıtılır (yazar başına bir shard dosyası; statusline / harici izleme tarafından okunabilir).
 
-## Multimodal: görüntü inceleme ve görsel üretimi
-
-**DeepSeek yalnızca metin modelidir** ve görsel girdisini veya üretimini desteklemez. Bu eklenti bu yetenekleri MCP araçları aracılığıyla harici olarak sağlar:
-
-| Araç | Açıklama |
-|---|---|
-| `describe_image` | Görüntülere bakarak soruları yanıtlar (ekran görüntüleri, tasarımlar, grafikler vb.); sonuçlar sağlayıcı + model + görüntü + soruya göre önbelleğe alınır |
-| `generate_image` | Metin açıklamasından görüntü üretir, belirtilen mutlak yola kaydeder; çıktı düz bitmap'tir (katman düzenlemesi için OpenPencil gerekir) |
-
-**Oturumda görsel yapıştırma**: DSH'de görselleri doğrudan yapıştırmak için modeli `DeepSeek (vision) ◉` olarak değiştirin. Görseller oturumda kalır ve normal şekilde görüntülenir; eklenti, onlardan sonra transkript edilmiş metni ekler ve göndermeden önce görselleri çıkarır — siz görseli görürsünüz, model metni okur.
-
-### Yapılandırma
-
-**DSH ayarlar sayfası → DSH Crew → Multimodal** bölümünde (veya doğrudan `~/.config/dsh-crew/config.json` dosyasını düzenleyin):
-
-**Görüntü sağlayıcısı** (görüntü inceleme):
-
-- `claude-code` (varsayılan, haiku kullanır, ucuz)
-- `codex` (GPT kullanır, belirli bir model belirtilebilir)
-- `grok` (Grok kullanır)
-- `agy` (Antigravity)
-- `custom` (OpenAI uyumlu API veya yerel komut)
-- `off` (devre dışı)
-
-**Görsel üretim sağlayıcısı** (görsel üretimi):
-
-- `codex` (`$imagegen`, gpt-image-2)
-- `agy` (Nano Banana)
-- `grok` (Imagine)
-- `custom` (OpenAI uyumlu API veya yerel komut)
-- `off` (devre dışı)
-
-### Özel sağlayıcı
-
-İki entegrasyon yöntemi:
-
-**API**: OpenAI uyumlu herhangi bir endpoint
-- Base URL, API Anahtarı ve model listesini doldurun
-- Görüntü inceleme, satır içi base64 görsellerle `/chat/completions` kullanır
-- Görsel üretimi `/images/generations` kullanır
-- **Üretim yeteneğine sahip olmak için "image generation model" belirtilmelidir**, aksi halde sağlayıcı yalnızca görüntü inceleme seçiminde görünür
-
-**CLI**: Yerel komut şablonu; placeholders güvenli referanslarla değiştirilir
-- Görüntü inceleme: `{image} {question} {model}` → yanıt olarak stdout
-- Görsel üretimi: `{prompt} {output} {size}` → komut dosyayı `{output}` konumuna yazmalıdır
-- En az bir komut doldurun; hangisi doldurulursa yetenek onu belirler
-
-**Bağlantı testi**: Her özel sağlayıcının bir test düğmesi vardır
-- API: Endpoint erişilebilirliğini ve kimlik doğrulamayı kontrol eder, doğrulamak için gerçek bir görüntü isteği gönderir
-- CLI: Çalıştırılabilir dosyayı kontrol eder, doğrulamak için gerçek komutu çalıştırır
-- Görsel üretimi: Yalnızca yapılandırmayı doğrular, gerçek görsel çıktısı üretmez
-
-**Ödünç alınan abonelik CLI'leri** (claude / codex / grok / agy) yerel olarak oturum açmış olmanızı gerektirir; eklenti sizin adınıza onların izinlerini atlamaz.
-
 ## Hub modu
 
 Bu paket aynı zamanda geçerli bir DSH bundle'ıdır (`dsh.bundle` + `cordis.patch.yml`). `dsh plugin add dsh-crew` ile DSH Web profiline kurulduktan sonra:
@@ -331,7 +261,6 @@ Bu paket aynı zamanda geçerli bir DSH bundle'ıdır (`dsh.bundle` + `cordis.pa
 ### Bilinen konular
 
 - Codex role'u teorik olarak doğrudan DeepSeek'e işaret eden `model_provider` deneyebilir (doğrulanmamış); bu köprü buna bağlı değildir
-- Görsel üretim çıktısı düz bitmap'tir; katman düzenlemesi OpenPencil gerektirir
 - **Runtime bağımlılıkları**: Yalnızca `@modelcontextprotocol/sdk` ve `zod`; `@deepseek-ai/*` paketleri peerDependencies'tir (DSH host tarafından sağlanır)
 - **Codex şunları yapılandırmalıdır**: `default_tools_approval_mode = "approve"`, aksi halde araç çağrıları otomatik iptal edilir
 

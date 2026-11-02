@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
@@ -11,7 +11,7 @@ import test from 'node:test';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const LOADER = resolve(ROOT, 'test/fixtures/reject-standalone-jobs-loader.mjs');
 
-function waitForResponse(child, id) {
+function waitForResponse(child, id, getStderr = () => '') {
   return new Promise((resolveResponse, reject) => {
     let buffer = '';
     const timeout = setTimeout(() => {
@@ -35,7 +35,7 @@ function waitForResponse(child, id) {
     };
     const onExit = (code, signal) => {
       cleanup();
-      reject(new Error(`MCP server exited before response ${id}: code=${code} signal=${signal}`));
+      reject(new Error(`MCP server exited before response ${id}: code=${code} signal=${signal}; stderr=${getStderr() || '<empty>'}`));
     };
     const cleanup = () => {
       clearTimeout(timeout);
@@ -52,8 +52,32 @@ function send(child, message) {
   child.stdin.write(`${JSON.stringify(message)}\n`);
 }
 
-test('MCP starts and exposes hub tools without loading standalone jobs', async (t) => {
+async function waitFor(check, message, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const value = await check();
+    if (value) return value;
+    await new Promise((resolveWait) => setTimeout(resolveWait, 20));
+  }
+  throw new Error(`timed out waiting for ${message}`);
+}
+
+async function readDispatcherRows(home) {
+  const dir = resolve(home, '.config/dsh-crew/status.d');
+  return waitFor(async () => {
+    try {
+      const { readdir } = await import('node:fs/promises');
+      const file = (await readdir(dir)).find((name) => name.startsWith('dispatcher-'));
+      if (!file) return undefined;
+      return JSON.parse(await readFile(resolve(dir, file), 'utf8')).jobs;
+    } catch { return undefined; }
+  }, 'dispatcher status shard');
+}
+
+test('MCP keeps concurrent dispatches visible until hub workers exist without loading standalone jobs', async (t) => {
   const requests = [];
+  const pendingSpawns = [];
+  let spawnCount = 0;
   const hub = createServer((request, response) => {
     requests.push({ method: request.method, url: request.url });
     response.setHeader('content-type', 'application/json');
@@ -62,14 +86,16 @@ test('MCP starts and exposes hub tools without loading standalone jobs', async (
       return;
     }
     if (request.method === 'POST' && request.url === '/_dsh/dsh-crew/jobs') {
-      response.end(JSON.stringify({ ok: true, job: { id: 'hub-test' } }));
+      const id = `hub-test-${++spawnCount}`;
+      pendingSpawns.push(() => response.end(JSON.stringify({ ok: true, job: { id } })));
       return;
     }
-    if (request.method === 'GET' && request.url?.startsWith('/_dsh/dsh-crew/jobs/hub-test?wait=')) {
+    const match = request.url?.match(/^\/_dsh\/dsh-crew\/jobs\/(hub-test-\d+)\?wait=/);
+    if (request.method === 'GET' && match) {
       response.end(JSON.stringify({
         ok: true,
         job: {
-          id: 'hub-test',
+          id: match[1],
           model: 'deepseek-v4-flash',
           status: 'done',
           result: 'ok',
@@ -118,7 +144,7 @@ test('MCP starts and exposes hub tools without loading standalone jobs', async (
     await rm(home, { recursive: true, force: true });
   });
 
-  const initializeResponse = waitForResponse(child, 1);
+  const initializeResponse = waitForResponse(child, 1, () => stderr);
   send(child, {
     jsonrpc: '2.0',
     id: 1,
@@ -133,36 +159,65 @@ test('MCP starts and exposes hub tools without loading standalone jobs', async (
   assert.equal(initialized.error, undefined, stderr);
 
   send(child, { jsonrpc: '2.0', method: 'notifications/initialized' });
-  const toolsResponse = waitForResponse(child, 2);
+  const toolsResponse = waitForResponse(child, 2, () => stderr);
   send(child, { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
   const tools = await toolsResponse;
   assert.equal(tools.error, undefined, stderr);
   assert.ok(tools.result.tools.some((tool) => tool.name === 'dsh_run_worker'));
 
-  const callResponse = waitForResponse(child, 3);
-  send(child, {
-    jsonrpc: '2.0',
-    id: 3,
-    method: 'tools/call',
-    params: {
-      name: 'dsh_run_worker',
-      arguments: {
-        task: 'Reply with exactly the word: ok',
-        tier: 'flash',
-        effort: 'off',
-        cwd: ROOT,
+  const calls = [3, 4].map((id, index) => {
+    const response = waitForResponse(child, id, () => stderr);
+    send(child, {
+      jsonrpc: '2.0',
+      id,
+      method: 'tools/call',
+      params: {
+        name: 'dsh_run_worker',
+        arguments: {
+          task: `Reply with exactly the word: ok (${index + 1})`,
+          tier: 'flash',
+          effort: 'off',
+          cwd: ROOT,
+        },
       },
-    },
+    });
+    return response;
   });
-  const call = await callResponse;
-  assert.equal(call.error, undefined, stderr);
-  const result = JSON.parse(call.result.content[0].text);
-  assert.equal(result.model, 'deepseek-v4-flash');
-  assert.equal(result.status, 'done');
-  assert.equal(result.result, 'ok');
-  assert.deepEqual(requests.map(({ method, url }) => `${method} ${url}`), [
-    'GET /_dsh/dsh-crew/ping',
+
+  await waitFor(() => pendingSpawns.length === 2, 'two pending hub spawns');
+  const dispatchRows = await readDispatcherRows(home);
+  assert.equal(dispatchRows.length, 3);
+  assert.equal(dispatchRows.filter((row) => row.status === 'idle').length, 1);
+  const runningRows = dispatchRows.filter((row) => row.status === 'running');
+  assert.equal(runningRows.length, 2);
+  assert.deepEqual(runningRows.map((row) => row.task).sort(), [
+    'Reply with exactly the word: ok (1)',
+    'Reply with exactly the word: ok (2)',
+  ]);
+  assert.ok(runningRows.every((row) => row.dispatch === true && row.phase === 'dispatching'
+    && row.dispatchId === row.id && row.currentTool === 'dsh_run_worker'));
+
+  pendingSpawns.splice(0).forEach((release) => release());
+  const responses = await Promise.all(calls);
+  for (const call of responses) {
+    assert.equal(call.error, undefined, stderr);
+    const result = JSON.parse(call.result.content[0].text);
+    assert.equal(result.model, 'deepseek-v4-flash');
+    assert.equal(result.status, 'done');
+    assert.equal(result.result, 'ok');
+  }
+
+  const idleRows = await waitFor(async () => {
+    const rows = await readDispatcherRows(home);
+    return rows.length === 1 && rows[0].status === 'idle' ? rows : undefined;
+  }, 'idle dispatcher after handoff');
+  assert.equal(idleRows[0].dispatcher, true);
+  const requestLines = requests.map(({ method, url }) => `${method} ${url}`);
+  assert.ok(requestLines.filter((line) => line === 'GET /_dsh/dsh-crew/ping').length >= 1);
+  assert.deepEqual(requestLines.filter((line) => line !== 'GET /_dsh/dsh-crew/ping'), [
     'POST /_dsh/dsh-crew/jobs',
-    'GET /_dsh/dsh-crew/jobs/hub-test?wait=1800',
+    'POST /_dsh/dsh-crew/jobs',
+    'GET /_dsh/dsh-crew/jobs/hub-test-1?wait=1800',
+    'GET /_dsh/dsh-crew/jobs/hub-test-2?wait=1800',
   ]);
 });

@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong><a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness</a> プラグイン: Claude Code / Codex から DSH エージェントへ作業をディスパッチします。ホスト本来の subagent UI はそのままです。</strong><br />
-  <sub>ネイティブ進捗 UI &bull; tier ポリシー &amp; エスカレーション &bull; ホスト内 DSH セッション &bull; ビジョン &amp; 画像生成 &bull; ワンクリックインストール</sub>
+  <sub>ネイティブ進捗 UI &bull; tier ポリシー &amp; エスカレーション &bull; ホスト内 DSH セッション &bull; ワンクリックインストール</sub>
 </p>
 
 <p align="center">
@@ -26,7 +26,7 @@
 <p align="center">
   <img src="./docs/images/dsh-crew-overview.png" alt="DSH Crew 設定ページ" width="100%" />
 </p>
-<p align="center"><sub>DSH Crew 設定ページ — ホスト連携、ディスパッチポリシー、実行、マルチモーダルブリッジ</sub></p>
+<p align="center"><sub>DSH Crew 設定ページ — ホスト連携、ディスパッチポリシー、実行</sub></p>
 
 ## DSH Crew を使う理由
 
@@ -57,22 +57,6 @@ worker は Claude Code / Codex 上で通常の subagent として表示され、
 ### 🏛️ ホスト内 DSH セッション
 
 bundle を DSH プロファイルにインストールすると、各 worker は第一級の DSH セッションになります。Web UI に表示され、作業ディレクトリごとにグループ化され、tier ごとに選択した Agent プリセットでマウントされます。DSH が起動していない場合、ディスパッチは standalone DSH ランタイムにフォールバックするため、CI やヘッドレス環境でも動作します。
-
-</td>
-<td width="50%">
-
-### 👁️ ビジョンと画像生成
-
-DSH のモデルはテキストのみです。`describe_image` と `generate_image` は、すでにお持ちの CLI — Claude、Codex、Grok、Antigravity — または設定した任意の OpenAI 互換 API の目と筆を借ります。貼り付けた画像は会話内で表示されたまま、テキストとしてモデルに渡されます。
-
-</td>
-</tr>
-<tr>
-<td width="50%">
-
-### 🔌 カスタムプロバイダー
-
-独自のエンドポイント (Base URL + API キー + モデル) またはローカルコマンドテンプレートを利用できます。各プロバイダーには接続テストがあり、到達性と認証をチェックしたうえで実際のビジョン呼び出しを 1 回行うため、問題はタスクの途中ではなくいま判明します。
 
 </td>
 <td width="50%">
@@ -239,60 +223,6 @@ Codex 側にも同じ 2 つのプロンプトが入ります:
 
 進捗は同時に `~/.config/dsh-crew/status.d/` へミラーリングされます (ライターごとに 1 つのシャードファイル。statusline / 外部監視から読み取れます)。
 
-## マルチモーダル: ビジョンと画像生成
-
-**DeepSeek はテキストのみのモデルであり**、画像入力や生成には対応していません。このプラグインはこれらの能力を MCP ツール経由で外部から調達します:
-
-| ツール | 説明 |
-|---|---|
-| `describe_image` | 画像 (スクリーンショット、デザイン、図表など) を見て質問に回答します。結果はプロバイダー + モデル + 画像 + 質問の組み合わせでキャッシュされます |
-| `generate_image` | テキスト説明から画像を生成し、指定した絶対パスに保存します。出力はフラットなビットマップです (レイヤー編集には OpenPencil が必要) |
-
-**セッションへの画像貼り付け**: DSH でモデルを `DeepSeek (vision) ◉` に切り替えると、画像を直接貼り付けられます。画像はセッション内に残り、通常どおり表示されます。プラグインは画像の後に書き起こしテキストを追記し、送信前に画像を除去します — あなたには画像が見え、モデルにはテキストが読まれます。
-
-### 設定
-
-**DSH 設定ページ → DSH Crew → Multimodal** (または `~/.config/dsh-crew/config.json` を直接編集):
-
-**ビジョンプロバイダー** (画像閲覧):
-
-- `claude-code` (デフォルト。haiku を使用し、低コスト)
-- `codex` (GPT を使用。特定のモデルを指定可能)
-- `grok` (Grok を使用)
-- `agy` (Antigravity)
-- `custom` (OpenAI 互換 API またはローカルコマンド)
-- `off` (無効)
-
-**画像生成プロバイダー** (画像生成):
-
-- `codex` (`$imagegen`, gpt-image-2)
-- `agy` (Nano Banana)
-- `grok` (Imagine)
-- `custom` (OpenAI 互換 API またはローカルコマンド)
-- `off` (無効)
-
-### カスタムプロバイダー
-
-連携方法は 2 種類です:
-
-**API**: 任意の OpenAI 互換エンドポイント
-- Base URL、API キー、モデルリストを入力します
-- ビジョンはインライン base64 画像付きで `/chat/completions` を使用します
-- 画像生成は `/images/generations` を使用します
-- 生成機能を使うには**「画像生成モデル」の指定が必須です**。指定しない場合、プロバイダーはビジョンの選択肢にのみ表示されます
-
-**CLI**: ローカルコマンドテンプレート。プレースホルダーは安全な参照に置換されます
-- ビジョン: `{image} {question} {model}` → stdout が回答になります
-- 画像生成: `{prompt} {output} {size}` → コマンドは `{output}` にファイルを書き込む必要があります
-- 少なくとも 1 つのコマンドを入力してください。入力されたコマンドによって能力が決まります
-
-**接続テスト**: 各カスタムプロバイダーにはテストボタンがあります
-- API: エンドポイントの到達性と認証を確認し、実際のビジョンリクエストを送信して検証します
-- CLI: 実行可能ファイルを確認し、実際のコマンドを実行して検証します
-- 画像生成: 設定の検証のみで、実際の画像出力は行いません
-
-**借りるサブスクリプション CLI** (claude / codex / grok / agy) はローカルでのログインが必要です。プラグインがそれらの権限を代わりに突破することはありません。
-
 ## Hub モード
 
 このパッケージは有効な DSH bundle (`dsh.bundle` + `cordis.patch.yml`) でもあります。`dsh plugin add dsh-crew` で DSH Web プロファイルにインストールすると:
@@ -331,7 +261,6 @@ Codex 側にも同じ 2 つのプロンプトが入ります:
 ### 既知の事項
 
 - Codex ロールは理論上、DeepSeek を直接指す `model_provider` を試せます (未検証)。このブリッジはそれに依存しません
-- 画像生成の出力はフラットなビットマップです。レイヤー編集には OpenPencil が必要です
 - **ランタイム依存**: `@modelcontextprotocol/sdk` と `zod` のみ。`@deepseek-ai/*` は peerDependencies です (DSH ホストが提供)
 - **Codex の必須設定**: `default_tools_approval_mode = "approve"`。これがないとツール呼び出しが自動キャンセルされます
 

@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Um plugin do <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness</a>: envie trabalho para agentes DSH a partir do Claude Code / Codex, sem abrir mão da UI nativa de subagent do host.</strong><br />
-  <sub>UI de progresso nativa &bull; Política de Tier &amp; Escalonamento &bull; Sessões DSH no Host &bull; Visão &amp; Geração de Imagens &bull; Instalação em Um Clique</sub>
+  <sub>UI de progresso nativa &bull; Política de Tier &amp; Escalonamento &bull; Sessões DSH no Host &bull; Instalação em Um Clique</sub>
 </p>
 
 <p align="center">
@@ -26,7 +26,7 @@
 <p align="center">
   <img src="./docs/images/dsh-crew-overview.png" alt="DSH Crew — página de configurações" width="100%" />
 </p>
-<p align="center"><sub>A página de configurações do DSH Crew — integrações do host, política de despacho, execução e a ponte multimodal</sub></p>
+<p align="center"><sub>A página de configurações do DSH Crew — integrações do host, política de despacho, execução</sub></p>
 
 ## Por que DSH Crew
 
@@ -57,22 +57,6 @@ Workers aparecem como subagents regulares no Claude Code / Codex — contagem de
 ### 🏛️ Sessões DSH no Host
 
 Com o bundle instalado em um perfil DSH, cada worker é uma sessão DSH de primeira classe: visível na Web UI, agrupada por diretório de trabalho e montada com o preset de Agent que você escolhe por tier. Sem o DSH em execução, o despacho volta para um runtime DSH standalone, então ambientes CI e headless continuam funcionando.
-
-</td>
-<td width="50%">
-
-### 👁️ Visão e Geração de Imagens
-
-Os modelos do DSH são somente texto. `describe_image` e `generate_image` usam os olhos e o pincel das CLIs que você já tem — Claude, Codex, Grok, Antigravity — ou de qualquer API compatível com OpenAI que você configurar. Imagens coladas permanecem visíveis na conversa e chegam ao modelo como texto.
-
-</td>
-</tr>
-<tr>
-<td width="50%">
-
-### 🔌 Provedores Personalizados
-
-Traga seu próprio endpoint (Base URL + API Key + modelos) ou um modelo de comando local. Cada provedor tem um teste de conectividade que verifica alcance e autenticação e depois faz uma chamada real de visão, para você descobrir agora, não no meio da tarefa.
 
 </td>
 <td width="50%">
@@ -239,60 +223,6 @@ Os mesmos dois prompts são instalados para o Codex:
 
 O progresso também é espelhado em `~/.config/dsh-crew/status.d/` (um arquivo shard por escritor, que pode ser lido por statusline / monitoramento externo).
 
-## Multimodal: visão e geração de imagens
-
-**DeepSeek é um modelo somente texto** e não suporta entrada ou geração de imagens. Este plugin obtém essas capacidades externamente por meio de ferramentas MCP:
-
-| Ferramenta | Descrição |
-|---|---|
-| `describe_image` | Responde perguntas analisando imagens (capturas de tela, designs, gráficos etc.); resultados em cache por provedor + modelo + imagem + pergunta |
-| `generate_image` | Gera imagem a partir de uma descrição em texto e salva no caminho absoluto especificado; a saída é um bitmap plano (requer OpenPencil para edição de camadas) |
-
-**Colar imagens na sessão**: No DSH, mude o modelo para `DeepSeek (vision) ◉` para colar imagens diretamente. As imagens permanecem na sessão e são exibidas normalmente; o plugin acrescenta o texto transcrito após elas e remove as imagens antes do envio — você vê a imagem, o modelo lê o texto.
-
-### Configuração
-
-Na **página de configurações do DSH → DSH Crew → Multimodal** (ou edite diretamente `~/.config/dsh-crew/config.json`):
-
-**Provedor de visão** (visualização de imagens):
-
-- `claude-code` (padrão, usa haiku, barato)
-- `codex` (usa GPT, pode especificar um modelo específico)
-- `grok` (usa Grok)
-- `agy` (Antigravity)
-- `custom` (API compatível com OpenAI ou comando local)
-- `off` (desativado)
-
-**Provedor de geração de imagens** (geração de imagens):
-
-- `codex` (`$imagegen`, gpt-image-2)
-- `agy` (Nano Banana)
-- `grok` (Imagine)
-- `custom` (API compatível com OpenAI ou comando local)
-- `off` (desativado)
-
-### Provedor personalizado
-
-Dois métodos de integração:
-
-**API**: qualquer endpoint compatível com OpenAI
-- Preencha Base URL, API Key e lista de modelos
-- Visão usa `/chat/completions` com imagens base64 inline
-- Geração de imagens usa `/images/generations`
-- **É obrigatório especificar o "modelo de geração de imagens" para ter capacidade de geração**; caso contrário, o provedor só aparece na seleção de visão
-
-**CLI**: modelo de comando local, com placeholders substituídos por referências seguras
-- Visão: `{image} {question} {model}` → stdout como resposta
-- Geração de imagens: `{prompt} {output} {size}` → o comando deve gravar o arquivo em `{output}`
-- Preencha pelo menos um comando; o que for preenchido determina a capacidade
-
-**Teste de conectividade**: cada provedor personalizado tem um botão de teste
-- API: verifica alcance do endpoint, autenticação e envia uma requisição real de visão para confirmar
-- CLI: verifica o arquivo executável e executa um comando real para confirmar
-- Geração de imagens: valida apenas a configuração, sem gerar imagem de fato
-
-**CLIs de assinatura emprestadas** (claude / codex / grok / agy) exigem que você esteja conectado localmente; o plugin não contorna as permissões delas por você.
-
 ## Modo hub
 
 Este pacote também é um bundle DSH válido (`dsh.bundle` + `cordis.patch.yml`). Após instalar no perfil do DSH Web com `dsh plugin add dsh-crew`:
@@ -331,7 +261,6 @@ Este pacote também é um bundle DSH válido (`dsh.bundle` + `cordis.patch.yml`)
 ### Itens conhecidos
 
 - O role do Codex pode, teoricamente, tentar `model_provider` apontando diretamente para DeepSeek (não verificado); esta ponte não depende disso
-- A saída da geração de imagens é um bitmap plano; a edição de camadas requer OpenPencil
 - **Dependências de runtime**: apenas `@modelcontextprotocol/sdk` e `zod`; `@deepseek-ai/*` são peerDependencies (fornecidas pelo host DSH)
 - **O Codex deve configurar**: `default_tools_approval_mode = "approve"`, caso contrário as chamadas de ferramenta são canceladas automaticamente
 

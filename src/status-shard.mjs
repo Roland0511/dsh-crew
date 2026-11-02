@@ -3,7 +3,7 @@
 // and readers merge all fresh shards. Kills the last-writer-wins race that a
 // single shared status.json had with multiple concurrent writers.
 
-import { writeFileSync, mkdirSync, rmSync, readdirSync, readFileSync } from 'node:fs';
+import { writeFileSync, mkdirSync, renameSync, rmSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -14,7 +14,11 @@ export const SHARD_FRESH_MS = 30 * 60 * 1000;
 export function createShardWriter(kind) {
   const writer = `${kind}-${process.pid}`;
   const file = join(SHARD_DIR, `${writer}.json`);
-  const cleanup = () => { try { rmSync(file, { force: true }); } catch {} };
+  const temp = join(SHARD_DIR, `.${writer}.tmp`);
+  const cleanup = () => {
+    try { rmSync(file, { force: true }); } catch {}
+    try { rmSync(temp, { force: true }); } catch {}
+  };
   process.once('exit', cleanup);
   process.once('SIGINT', () => { cleanup(); process.exit(130); });
   process.once('SIGTERM', () => { cleanup(); process.exit(143); });
@@ -23,7 +27,8 @@ export function createShardWriter(kind) {
     publish(jobs) {
       try {
         mkdirSync(SHARD_DIR, { recursive: true });
-        writeFileSync(file, JSON.stringify({ updatedAt: new Date().toISOString(), writer, jobs }, null, 2));
+        writeFileSync(temp, JSON.stringify({ updatedAt: new Date().toISOString(), writer, jobs }, null, 2));
+        renameSync(temp, file);
       } catch {}
     },
     dispose: cleanup,
@@ -48,5 +53,14 @@ export function readMergedStatus({ excludeWriter } = {}) {
     }
   } catch {}
   try { consume(readFileSync(join(CONFIG_DIR, 'status.json'), 'utf8')); } catch {}
-  return jobs;
+
+  // A concrete worker and its provisional dispatch can coexist briefly while
+  // two independent shard writers perform the handoff. Reconcile by the stable
+  // invocation id so consumers never render a duplicate, regardless of file
+  // enumeration order; unrelated/idle rows have no dispatchId and are retained.
+  const concreteDispatches = new Set(jobs
+    .filter((job) => job.dispatchId && !(job.dispatch === true && job.phase === 'dispatching'))
+    .map((job) => job.dispatchId));
+  return jobs.filter((job) => !(job.dispatchId && concreteDispatches.has(job.dispatchId)
+    && job.dispatch === true && job.phase === 'dispatching'));
 }

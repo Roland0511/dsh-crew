@@ -11,6 +11,34 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const MARKETPLACE_NAME = 'dsh-crew';
 const PLUGIN_KEY = `dsh-crew@${MARKETPLACE_NAME}`;
 const MCP_TOOLS = ['dsh_run_worker', 'dsh_spawn_worker', 'dsh_worker_status', 'dsh_worker_result', 'dsh_worker_cancel'];
+const CODEX_AGENT_FILES = ['ds-flash.toml', 'ds-pro.toml', 'ds-vision.toml'];
+const CODEX_CONFIG_BEGIN = '# BEGIN dsh-crew managed agents';
+const CODEX_CONFIG_END = '# END dsh-crew managed agents';
+
+function codexAgentBlock() {
+  return `${CODEX_CONFIG_BEGIN}\n`
+    + `[agents."ds-flash"]\n`
+    + `description = "DeepSeek V4 Flash worker (runs inside DSH). Spawn for simple, well-scoped subtasks: mechanical edits, small scripts, lookups, straightforward fixes."\n`
+    + `config_file = "./agents/ds-flash.toml"\n\n`
+    + `[agents."ds-pro"]\n`
+    + `description = "DeepSeek V4 Pro worker (runs inside DSH). Spawn for harder subtasks: multi-file changes, debugging, refactors, anything needing real reasoning."\n`
+    + `config_file = "./agents/ds-pro.toml"\n\n`
+    + `[agents."ds-vision"]\n`
+    + `description = "DeepSeek V4 Flash Vision worker (runs inside DSH). Spawn for subtasks that need to look at images: screenshots, diagrams, UI mockups, scanned pages, photos."\n`
+    + `config_file = "./agents/ds-vision.toml"\n`
+    + `${CODEX_CONFIG_END}`;
+}
+
+function replaceManagedCodexBlock(content, block = '') {
+  const start = content.indexOf(CODEX_CONFIG_BEGIN);
+  const end = content.indexOf(CODEX_CONFIG_END);
+  let base = content;
+  if (start >= 0 && end >= start) {
+    base = content.slice(0, start) + content.slice(end + CODEX_CONFIG_END.length);
+  }
+  base = base.trimEnd();
+  return block ? `${base}${base ? '\n\n' : ''}${block}\n` : `${base}${base ? '\n' : ''}`;
+}
 
 function backup(file) {
   if (existsSync(file)) {
@@ -44,30 +72,15 @@ export const GLOBAL_CONFIG_DEFAULTS = {
   mode: 'auto',
   default_timeout_seconds: 1800,
   hub_url: 'http://127.0.0.1:3080',
-  // auto = orchestrator picks the tier; flash-only / pro-only clamp every
-  // dispatch to one tier at the tool layer regardless of what was requested.
+  // auto = orchestrator picks the tier; <tier>-only (flash-only / pro-only /
+  // vision-only) clamps every dispatch to one tier at the tool layer.
   tier_policy: 'auto',
   // When a blocking flash run fails, retry the same task once on pro.
   escalate_on_failure: false,
-  // Multimodal bridge: which subscription CLI lends the text-only DS model
-  // eyes (describe_image) and a brush (generate_image).
-  vision_provider: 'claude-code', // claude-code | codex | grok | agy | <custom id> | off
-  vision_model: 'haiku', // model passed to the vision CLI; free-form
-  imagegen_provider: 'codex', // codex | agy | grok | <custom id> | off
-  // User-defined providers, each either an OpenAI-compatible HTTP endpoint or a
-  // local command. Entry shape:
-  //   { id, name, type: 'api' | 'cli', models: [],
-  //     api: base_url, api_key, imagegen_model
-  //     cli: vision_command, imagegen_command }
-  // CLI commands run via bash with shell-quoted placeholders: vision
-  // {image} {question} {model} (stdout is the answer), imagegen
-  // {prompt} {output} {size} (must write the file to {output}).
-  custom_providers: [],
-  // User-added model ids per provider, merged into the panel's model list.
-  extra_models: {},
   // Hub-mode agent preset per tier: 'default' follows the DSH roster default.
   preset_flash: 'minimal',
   preset_pro: 'default',
+  preset_vision: 'default',
 };
 
 export function readGlobalConfig() {
@@ -91,18 +104,33 @@ export function installStatus({ home = homedir() } = {}) {
   const claudeInstalled = !!(enabled && !Array.isArray(enabled) && enabled[PLUGIN_KEY]);
   const hudWired = typeof settings.statusLine?.command === 'string'
     && settings.statusLine.command.includes('worker-segment.sh');
-  const codexInstalled = existsSync(join(home, '.codex', 'agents', 'ds-flash.toml'));
-  return { claude: { installed: claudeInstalled, hud: hudWired }, codex: { installed: codexInstalled } };
+  const codexDir = join(home, '.codex');
+  const codexConfig = existsSync(join(codexDir, 'config.toml')) ? readFileSync(join(codexDir, 'config.toml'), 'utf8') : '';
+  const codexAgentsPresent = CODEX_AGENT_FILES.every((file) => existsSync(join(codexDir, 'agents', file)));
+  const codexRegistered = codexConfig.includes(CODEX_CONFIG_BEGIN) && codexConfig.includes(CODEX_CONFIG_END);
+  const codexInstalled = codexAgentsPresent && codexRegistered;
+  return { claude: { installed: claudeInstalled, hud: hudWired }, codex: { installed: codexInstalled, agents: codexAgentsPresent, registered: codexRegistered } };
 }
 
-export function uninstallCodex({ home = homedir() } = {}) {
+export function uninstallCodex({ home = homedir(), scope } = {}) {
   const actions = [];
-  for (const f of ['ds-flash.toml', 'ds-pro.toml']) {
-    const p = join(home, '.codex', 'agents', f);
+  const codexDir = scope === 'project' ? join(process.cwd(), '.codex') : join(home, '.codex');
+  for (const f of CODEX_AGENT_FILES) {
+    const p = join(codexDir, 'agents', f);
     if (existsSync(p)) { backup(p); rmSync(p); actions.push(`removed: ${p} (backup kept)`); }
   }
+  const configFile = join(codexDir, 'config.toml');
+  if (existsSync(configFile)) {
+    const current = readFileSync(configFile, 'utf8');
+    const next = replaceManagedCodexBlock(current);
+    if (next !== current) {
+      backup(configFile);
+      writeFileSync(configFile, next);
+      actions.push(`config: removed managed ds-flash / ds-pro / ds-vision registrations from ${configFile} (backup kept)`);
+    }
+  }
   for (const f of ['dsh-config.md', 'dsh-status.md']) {
-    const p = join(home, '.codex', 'prompts', f);
+    const p = join(codexDir, 'prompts', f);
     if (existsSync(p)) { rmSync(p); actions.push(`removed: ${p}`); }
   }
   return { ok: true, actions: actions.length ? actions : ['nothing to remove'] };
@@ -201,23 +229,33 @@ export async function installClaudeCode({ home = homedir(), statusline = false }
 
 export function installCodex({ home = homedir(), scope } = {}) {
   const actions = [];
-  const agentsDir = scope === 'project' ? join(process.cwd(), '.codex', 'agents') : join(home, '.codex', 'agents');
+  const codexDir = scope === 'project' ? join(process.cwd(), '.codex') : join(home, '.codex');
+  const agentsDir = join(codexDir, 'agents');
   mkdirSync(agentsDir, { recursive: true });
   const srcDir = join(ROOT, 'codex', 'agents');
-  for (const f of readdirSync(srcDir).filter((f) => f.endsWith('.toml'))) {
+  for (const f of CODEX_AGENT_FILES) {
     const dest = join(agentsDir, f);
     const bak = backup(dest);
     if (bak) actions.push(`backup: ${bak}`);
     const rendered = readFileSync(join(srcDir, f), 'utf8')
-      .replace(/args = \[.*server\.mjs"\]/, `args = ["${join(ROOT, 'src', 'server.mjs')}"]`);
+      .replaceAll('__DSH_CREW_CLI__', join(ROOT, 'src', 'cli', 'run-worker.mjs'));
     writeFileSync(dest, rendered);
-    actions.push(`role: ${dest}`);
+    actions.push(`agent config: ${dest}`);
   }
-  const promptsDir = scope === 'project' ? join(process.cwd(), '.codex', 'prompts') : join(home, '.codex', 'prompts');
+  const configFile = join(codexDir, 'config.toml');
+  const currentConfig = existsSync(configFile) ? readFileSync(configFile, 'utf8') : '';
+  const configBackup = backup(configFile);
+  if (configBackup) actions.push(`backup: ${configBackup}`);
+  writeFileSync(configFile, replaceManagedCodexBlock(currentConfig, codexAgentBlock()));
+  actions.push(`config: registered ds-flash / ds-pro / ds-vision via config_file in ${configFile} (CLI bridge; no Codex MCP)`);
+
+  const promptsDir = join(codexDir, 'prompts');
   mkdirSync(promptsDir, { recursive: true });
   const promptsSrc = join(ROOT, 'codex', 'prompts');
   for (const f of readdirSync(promptsSrc).filter((f) => f.endsWith('.md'))) {
-    writeFileSync(join(promptsDir, f), readFileSync(join(promptsSrc, f), 'utf8'));
+    const rendered = readFileSync(join(promptsSrc, f), 'utf8')
+      .replaceAll('__DSH_CREW_CLI__', join(ROOT, 'src', 'cli', 'run-worker.mjs'));
+    writeFileSync(join(promptsDir, f), rendered);
     actions.push(`prompt: ${join(promptsDir, f)}`);
   }
   return { ok: true, actions };

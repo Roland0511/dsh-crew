@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>一個 <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness</a> 外掛程式：從 Claude Code / Codex 分派工作給 DSH 代理，而不放棄主機的原生 subagent UI。</strong><br />
-  <sub>原生進度 UI • Tier 策略與升級 • 主機內 DSH 工作階段 • 視覺與圖片生成 • 單鍵安裝</sub>
+  <sub>原生進度 UI • Tier 策略與升級 • 主機內 DSH 工作階段 • 單鍵安裝</sub>
 </p>
 
 <p align="center">
@@ -26,7 +26,7 @@
 <p align="center">
   <img src="./docs/images/dsh-crew-overview.png" alt="DSH Crew — settings page" width="100%" />
 </p>
-<p align="center"><sub>DSH Crew 設定頁面 — 主機整合、分派策略、執行與多模態橋接</sub></p>
+<p align="center"><sub>DSH Crew 設定頁面 — 主機整合、分派策略、執行</sub></p>
 
 ## 為什麼選擇 DSH Crew
 
@@ -57,22 +57,6 @@ Worker 在 Claude Code / Codex 中顯示為一般 subagent — 分派計數、�
 ### 🏛️ 主機內 DSH 工作階段
 
 安裝束進 DSH 設定檔後，每個 worker 都是一級 DSH 工作階段：在 Web UI 中可見，按工作目錄分組，掛載您為每個 tier 選擇的 Agent 預設。不執行 DSH 時，分派會回落到獨立 DSH runtime，因此 CI 和無頭環境仍能工作。
-
-</td>
-<td width="50%">
-
-### 👁️ 視覺與圖片生成
-
-DSH 的模型是純文字。`describe_image` 和 `generate_image` 借用您已有的 CLI 的眼睛和筆刷 — Claude、Codex、Grok、Antigravity — 或任何您配置的 OpenAI 相容 API。貼上的圖片在對話中保持可見並作為文字到達模型。
-
-</td>
-</tr>
-<tr>
-<td width="50%">
-
-### 🔌 自訂提供者
-
-帶入您自己的端點（基底 URL + API 金鑰 + 模型）或本機命令範本。每個提供者都有連線測試檢查可達性和驗證，然後進行一次真實視覺呼叫，讓您現在就發現問題，而不是在工作中間。
 
 </td>
 <td width="50%">
@@ -239,60 +223,6 @@ Codex 端裝的是同樣兩條 prompt：
 
 進度同時複製到 `~/.config/dsh-crew/status.d/`（每個寫入者一個分片檔案，可由 statusline / 外部監控讀取）。
 
-## 多模態：視覺與圖片生成
-
-**DeepSeek 是純文字模型**，不支援圖片輸入或生成。此外掛程式透過 MCP 工具從外部取得這些功能：
-
-| 工具 | 說明 |
-|---|---|
-| `describe_image` | 透過查看圖片回答問題（螢幕截圖、設計、圖表等），結果由提供者 + 模型 + 圖片 + 問題快取 |
-| `generate_image` | 從文字描述生成圖片，儲存到指定絕對路徑；輸出是平面點陣圖（需要 OpenPencil 進行圖層編輯） |
-
-**工作階段圖片貼上**：在 DSH 中，切換模型到 `DeepSeek (vision) ◉` 以直接貼上圖片。圖片保留在工作階段中並正常顯示；外掛程式在其後附加轉錄文字並在傳送前移除圖片 — 你看到圖片，模型讀取文字。
-
-### 設定
-
-在 **DSH 設定頁面 → DSH Crew → Multimodal**（或直接編輯 `~/.config/dsh-crew/config.json`）：
-
-**視覺提供者**（圖片查看）：
-
-- `claude-code`（預設，使用 haiku，便宜）
-- `codex`（使用 GPT，可指定特定模型）
-- `grok`（使用 Grok）
-- `agy`（Antigravity）
-- `custom`（OpenAI 相容 API 或本機命令）
-- `off`（停用）
-
-**圖片生成提供者**（圖片生成）：
-
-- `codex`（`$imagegen`，gpt-image-2）
-- `agy`（Nano Banana）
-- `grok`（Imagine）
-- `custom`（OpenAI 相容 API 或本機命令）
-- `off`（停用）
-
-### 自訂提供者
-
-兩種整合方法：
-
-**API**：任何 OpenAI 相容的端點
-- 填入基底 URL、API 金鑰、模型列表
-- 視覺使用 `/chat/completions` 搭配內聯 base64 圖片
-- 圖片生成使用 `/images/generations`
-- **必須指定「圖片生成模型」才能具有生成能力**，否則提供者只會出現在視覺選擇中
-
-**CLI**：本機命令範本，預留位置替換為安全參照
-- 視覺：`{image} {question} {model}` → stdout 作為答案
-- 圖片生成：`{prompt} {output} {size}` → 命令必須將檔案寫入 `{output}`
-- 至少填寫一個命令；無論填入哪個都決定能力
-
-**連線測試**：每個自訂提供者都有測試按鈕
-- API：檢查端點可達性、驗證，傳送真實視覺要求以驗證
-- CLI：檢查可執行檔案，執行真實命令以驗證
-- 圖片生成：僅驗證設定，無實際圖片輸出
-
-**借用的訂閱 CLI**（claude / codex / grok / agy）要求您在本機登入；外掛程式不會為您繞過其權限。
-
 ## Hub 模式
 
 此套件也是有效的 DSH 束（`dsh.bundle` + `cordis.patch.yml`）。使用 `dsh plugin add dsh-crew` 安裝進 DSH Web 設定檔後：
@@ -331,7 +261,6 @@ Codex 端裝的是同樣兩條 prompt：
 ### 已知項目
 
 - Codex 角色理論上可以嘗試 `model_provider` 直接指向 DeepSeek（未驗證）；此橋接不依賴它
-- 圖片生成輸出是平面點陣圖；圖層編輯需要 OpenPencil
 - **Runtime 依賴項**：僅 `@modelcontextprotocol/sdk` 和 `zod`；`@deepseek-ai/*` 是 peerDependencies（由 DSH 主機提供）
 - **Codex 必須設定**：`default_tools_approval_mode = "approve"`，否則工具呼叫自動取消
 
